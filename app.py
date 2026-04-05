@@ -1,4 +1,5 @@
 import streamlit as st
+import re
 from nlp_processor import NLPProcessor
 from PII_analyzer import PIIanalyzer
 from PII_anonymizer import PIIanonymizer
@@ -18,14 +19,12 @@ st.set_page_config(
 # ─────────────────────────────────────────────
 st.markdown("""
 <style>
-    /* ── Global font & background ── */
     @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Sora:wght@400;600;700&display=swap');
 
     html, body, [class*="css"] {
         font-family: 'Sora', sans-serif;
     }
 
-    /* ── Hero header ── */
     .hero {
         background: linear-gradient(135deg, #0f172a 0%, #1e293b 60%, #0f4c81 100%);
         border-radius: 16px;
@@ -68,7 +67,6 @@ st.markdown("""
         text-transform: uppercase;
     }
 
-    /* ── Step cards ── */
     .step-header {
         display: flex;
         align-items: center;
@@ -92,7 +90,6 @@ st.markdown("""
         color: #e2e8f0;
     }
 
-    /* ── Result box ── */
     .result-box {
         background: #0f172a;
         border: 1px solid #1e40af55;
@@ -113,7 +110,6 @@ st.markdown("""
         font-size: 0.82rem;
     }
 
-    /* ── PII type pill colors ── */
     .pii-pill {
         display: inline-block;
         border-radius: 6px;
@@ -123,15 +119,14 @@ st.markdown("""
         font-family: 'JetBrains Mono', monospace;
         margin: 2px;
     }
-    .pill-PERSON      { background:#1e3a5f; color:#93c5fd; border:1px solid #1d4ed8; }
-    .pill-ORG         { background:#1a3a2a; color:#86efac; border:1px solid #16a34a; }
-    .pill-PHONE_NUMBER{ background:#3b1f5e; color:#d8b4fe; border:1px solid #7c3aed; }
-    .pill-EMAIL       { background:#1e3a5f; color:#93c5fd; border:1px solid #2563eb; }
-    .pill-DATE_TIME   { background:#3b2a0e; color:#fcd34d; border:1px solid #d97706; }
-    .pill-NRP         { background:#3b1a1a; color:#fca5a5; border:1px solid #dc2626; }
-    .pill-DEFAULT     { background:#1e293b; color:#94a3b8; border:1px solid #334155; }
+    .pill-PERSON        { background:#1e3a5f; color:#93c5fd; border:1px solid #1d4ed8; }
+    .pill-ORG           { background:#1a3a2a; color:#86efac; border:1px solid #16a34a; }
+    .pill-PHONE_NUMBER  { background:#3b1f5e; color:#d8b4fe; border:1px solid #7c3aed; }
+    .pill-EMAIL_ADDRESS { background:#1e3a5f; color:#93c5fd; border:1px solid #2563eb; }
+    .pill-DATE_TIME     { background:#3b2a0e; color:#fcd34d; border:1px solid #d97706; }
+    .pill-NRP           { background:#3b1a1a; color:#fca5a5; border:1px solid #dc2626; }
+    .pill-DEFAULT       { background:#1e293b; color:#94a3b8; border:1px solid #334155; }
 
-    /* ── Score bar ── */
     .score-bar-bg {
         background: #1e293b;
         border-radius: 99px;
@@ -142,17 +137,14 @@ st.markdown("""
     .score-bar-fill {
         height: 6px;
         border-radius: 99px;
-        background: linear-gradient(90deg, #3b82f6, #06b6d4);
     }
 
-    /* ── Divider ── */
     .section-divider {
         border: none;
         border-top: 1px solid #1e293b;
         margin: 1.4rem 0;
     }
 
-    /* ── Summary metrics ── */
     .metric-card {
         background: #0f172a;
         border: 1px solid #1e293b;
@@ -174,12 +166,32 @@ st.markdown("""
         margin-top: 2px;
     }
 
-    /* hide streamlit branding */
-    /*#MainMenu, footer { visibility: hidden; }*/
     footer { visibility: hidden; }
     .block-container { padding-top: 2rem; }
 </style>
 """, unsafe_allow_html=True)
+
+# ─────────────────────────────────────────────
+#  EXAMPLE TEXT
+# ─────────────────────────────────────────────
+EXAMPLE_TEXT = (
+    "Hi, I'm Arjun Sharma and I live at 14B, Anna Nagar, Chennai, Tamil Nadu 600040. "
+    "My phone number is 9876543210 and you can email me at arjun.sharma92@gmail.com. "
+    "I was born on 12th July 1992 and my Aadhaar number is 2345 6789 0123. "
+    "My PAN card number is ABCDE1234F and passport number is N3456789 valid till 2030. "
+    "I work at Tata Consultancy Services as a Senior Engineer, employee ID TCS-40291. "
+    "My HDFC bank account number is 50100234567891 with IFSC HDFC0001234. "
+    "Please transfer ₹1,20,000 before 15th April 2026. "
+    "My manager Sarah Johnson can be reached at +1-212-555-0198 or sarah.j@tcs.com. "
+    "Insurance policy number is STAR-HEALTH-776655 and my vehicle plate is MH12AB1234. "
+    "Driver's license: TN0120190012345. IP used for last login: 192.168.1.105."
+)
+
+# ─────────────────────────────────────────────
+#  SESSION STATE
+# ─────────────────────────────────────────────
+if "input_text" not in st.session_state:
+    st.session_state.input_text = ""
 
 # ─────────────────────────────────────────────
 #  HERO HEADER
@@ -196,26 +208,35 @@ st.markdown("""
 # ─────────────────────────────────────────────
 #  INPUT SECTION
 # ─────────────────────────────────────────────
-col_input, col_gap = st.columns([3, 1])
+col_input, _ = st.columns([3, 1])
 with col_input:
     text = st.text_area(
         "✍️ Paste or type your text below",
         height=120,
         placeholder="e.g. My name is John Doe and my phone number is 9876543210...",
+        value=st.session_state.input_text,
     )
 
-col_btn, col_clear, _ = st.columns([1, 1, 5])
-with col_btn:
-    analyze = st.button("Analyze", type="primary", use_container_width=True)
+col_analyze, col_example, col_clear, _ = st.columns([1.2, 1.2, 1, 4])
+
+with col_analyze:
+    analyze = st.button("🔍 Analyze & Anonymize", type="primary", use_container_width=True)
+
+with col_example:
+    if st.button("💡 Load Example", use_container_width=True):
+        st.session_state.input_text = EXAMPLE_TEXT
+        st.rerun()
+
 with col_clear:
     if st.button("🗑️ Clear", use_container_width=True):
+        st.session_state.input_text = ""
         st.rerun()
 
 # ─────────────────────────────────────────────
 #  HELPER: pill HTML
 # ─────────────────────────────────────────────
 def pill(label: str) -> str:
-    known = {"PERSON", "ORG", "PHONE_NUMBER", "EMAIL", "DATE_TIME", "NRP"}
+    known = {"PERSON", "ORG", "PHONE_NUMBER", "EMAIL_ADDRESS", "DATE_TIME", "NRP"}
     css = f"pill-{label}" if label in known else "pill-DEFAULT"
     return f'<span class="pii-pill {css}">{label}</span>'
 
@@ -227,14 +248,14 @@ if analyze:
         st.warning("⚠️ Please enter some text before analyzing.")
     else:
         with st.spinner("Running NLP pipeline…"):
-            processor   = NLPProcessor()
+            processor    = NLPProcessor()
             pii_analyzer = PIIanalyzer()
-            anonymizer  = PIIanonymizer()
+            anonymizer   = PIIanonymizer()
 
-            doc        = processor.processText(text)
-            tokens     = processor.getTokens(doc)
-            pos_tags   = processor.getPosTags(doc)
-            entities   = processor.getEntities(doc)
+            doc         = processor.processText(text)
+            tokens      = processor.getTokens(doc)
+            pos_tags    = processor.getPosTags(doc)
+            entities    = processor.getEntities(doc)
             pii_results = pii_analyzer.detectPII(text)
             anonymized  = anonymizer.anonymizePII(text, pii_results)
 
@@ -242,30 +263,25 @@ if analyze:
 
         # ── SUMMARY METRICS ────────────────────────
         m1, m2, m3, m4 = st.columns(4)
-        with m1:
-            st.markdown(f"""<div class="metric-card">
-                <div class="metric-value">{len(tokens)}</div>
-                <div class="metric-label">Tokens</div></div>""", unsafe_allow_html=True)
-        with m2:
-            st.markdown(f"""<div class="metric-card">
-                <div class="metric-value">{len(entities)}</div>
-                <div class="metric-label">Entities</div></div>""", unsafe_allow_html=True)
-        with m3:
-            st.markdown(f"""<div class="metric-card">
-                <div class="metric-value">{len(pii_results)}</div>
-                <div class="metric-label">PII Hits</div></div>""", unsafe_allow_html=True)
-        with m4:
-            high_conf = sum(1 for r in pii_results if getattr(r, "score", 0) >= 0.75)
-            st.markdown(f"""<div class="metric-card">
-                <div class="metric-value">{high_conf}</div>
-                <div class="metric-label">High-Confidence</div></div>""", unsafe_allow_html=True)
+        metrics = [
+            (len(tokens),      "Tokens"),
+            (len(entities),    "Entities Found"),
+            (len(pii_results), "PII Hits"),
+            (sum(1 for r in pii_results if getattr(r, "score", 0) >= 0.75), "High-Confidence"),
+        ]
+        for col, (val, label) in zip([m1, m2, m3, m4], metrics):
+            with col:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <div class="metric-value">{val}</div>
+                    <div class="metric-label">{label}</div>
+                </div>""", unsafe_allow_html=True)
 
         st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
 
-        # ── PIPELINE STEPS ─────────────────────────
+        # ── STEP 1 & 2 ─────────────────────────────
         left, right = st.columns(2, gap="large")
 
-        # STEP 1 – Tokenization
         with left:
             st.markdown("""
             <div class="step-header">
@@ -275,13 +291,12 @@ if analyze:
             with st.expander("View tokens", expanded=False):
                 token_html = " ".join(
                     f'<code style="background:#1e293b;color:#7dd3fc;border-radius:4px;'
-                    f'padding:2px 7px;margin:2px;display:inline-block;font-family:JetBrains Mono,monospace;'
-                    f'font-size:0.82rem;">{t}</code>'
+                    f'padding:2px 7px;margin:2px;display:inline-block;'
+                    f'font-family:JetBrains Mono,monospace;font-size:0.82rem;">{t}</code>'
                     for t in tokens
                 )
                 st.markdown(token_html, unsafe_allow_html=True)
 
-        # STEP 2 – POS Tagging
         with right:
             st.markdown("""
             <div class="step-header">
@@ -291,13 +306,15 @@ if analyze:
             with st.expander("View POS tags", expanded=False):
                 pos_colors = {
                     "NOUN": "#86efac", "PROPN": "#38bdf8", "VERB": "#fbbf24",
-                    "PRON": "#d8b4fe", "AUX": "#f9a8d4", "NUM": "#fb923c",
-                    "ADP": "#94a3b8", "CCONJ": "#94a3b8", "ADJ": "#6ee7b7",
+                    "PRON": "#d8b4fe", "AUX":  "#f9a8d4", "NUM":  "#fb923c",
+                    "ADP":  "#94a3b8", "CCONJ": "#94a3b8", "ADJ": "#6ee7b7",
                 }
                 rows = "".join(
                     f'<tr style="border-bottom:1px solid #1e293b">'
-                    f'<td style="padding:4px 10px;color:#e2e8f0;font-family:JetBrains Mono,monospace;font-size:0.82rem;">{tag[0]}</td>'
-                    f'<td style="padding:4px 10px;"><span style="color:{pos_colors.get(tag[1],"#94a3b8")};font-size:0.78rem;font-weight:600;">{tag[1]}</span></td>'
+                    f'<td style="padding:4px 10px;color:#e2e8f0;font-family:JetBrains Mono,monospace;'
+                    f'font-size:0.82rem;">{tag[0]}</td>'
+                    f'<td style="padding:4px 10px;"><span style="color:{pos_colors.get(tag[1], "#94a3b8")};'
+                    f'font-size:0.78rem;font-weight:600;">{tag[1]}</span></td>'
                     f'</tr>'
                     for tag in pos_tags if tag[0].strip()
                 )
@@ -307,9 +324,10 @@ if analyze:
                 )
 
         st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
+
+        # ── STEP 3 & 4 ─────────────────────────────
         left2, right2 = st.columns(2, gap="large")
 
-        # STEP 3 – NER
         with left2:
             st.markdown("""
             <div class="step-header">
@@ -320,16 +338,16 @@ if analyze:
                 for ent in entities:
                     text_val, label = ent[0], ent[1]
                     st.markdown(
-                        f'<div style="display:flex;align-items:center;gap:0.6rem;'
-                        f'padding:6px 10px;background:#0f172a;border-radius:8px;margin-bottom:6px;">'
-                        f'<span style="color:#e2e8f0;font-family:JetBrains Mono,monospace;font-size:0.85rem;">{text_val}</span>'
+                        f'<div style="display:flex;align-items:center;gap:0.6rem;padding:6px 10px;'
+                        f'background:#0f172a;border-radius:8px;margin-bottom:6px;">'
+                        f'<span style="color:#e2e8f0;font-family:JetBrains Mono,monospace;'
+                        f'font-size:0.85rem;">{text_val}</span>'
                         f'<span style="margin-left:auto">{pill(label)}</span></div>',
                         unsafe_allow_html=True,
                     )
             else:
                 st.info("No named entities found.")
 
-        # STEP 4 – PII Detection
         with right2:
             st.markdown("""
             <div class="step-header">
@@ -338,20 +356,19 @@ if analyze:
             </div>""", unsafe_allow_html=True)
             if pii_results:
                 for item in pii_results:
-                    # Support both string representations and object attributes
                     if hasattr(item, "entity_type"):
-                        etype  = item.entity_type
-                        score  = item.score
-                        start  = item.start
-                        end    = item.end
+                        etype = item.entity_type
+                        score = item.score
+                        start = item.start
+                        end   = item.end
                     else:
-                        parts  = str(item).split(",")
-                        etype  = parts[0].split(":")[-1].strip() if parts else "UNKNOWN"
-                        score  = float(parts[-1].split(":")[-1].strip()) if len(parts) > 3 else 0.0
-                        start  = int(parts[1].split(":")[-1].strip()) if len(parts) > 1 else 0
-                        end    = int(parts[2].split(":")[-1].strip()) if len(parts) > 2 else 0
+                        parts = str(item).split(",")
+                        etype = parts[0].split(":")[-1].strip() if parts else "UNKNOWN"
+                        score = float(parts[-1].split(":")[-1].strip()) if len(parts) > 3 else 0.0
+                        start = int(parts[1].split(":")[-1].strip()) if len(parts) > 1 else 0
+                        end   = int(parts[2].split(":")[-1].strip()) if len(parts) > 2 else 0
 
-                    pct = int(score * 100)
+                    pct       = int(score * 100)
                     bar_color = "#22c55e" if pct >= 75 else "#f59e0b" if pct >= 40 else "#ef4444"
                     snippet   = text[start:end] if start < len(text) and end <= len(text) else ""
 
@@ -366,16 +383,18 @@ if analyze:
                         <div style="font-family:JetBrains Mono,monospace;font-size:0.78rem;
                                     color:#64748b;margin-top:6px;">
                             pos {start}–{end}
-                            {"· <em>" + snippet + "</em>" if snippet else ""}
+                            {"&nbsp;·&nbsp;<em style='color:#94a3b8'>" + snippet + "</em>" if snippet else ""}
                         </div>
                         <div class="score-bar-bg">
-                            <div class="score-bar-fill" style="width:{pct}%;background:linear-gradient(90deg,{bar_color},{bar_color}99);"></div>
+                            <div class="score-bar-fill"
+                                 style="width:{pct}%;background:linear-gradient(90deg,{bar_color},{bar_color}99);">
+                            </div>
                         </div>
                     </div>""", unsafe_allow_html=True)
             else:
                 st.success("✅ No PII detected.")
 
-        # ── STEP 5 – Anonymized Output ─────────────────
+        # ── STEP 5 – Anonymized Output ──────────────
         st.markdown('<hr class="section-divider">', unsafe_allow_html=True)
         st.markdown("""
         <div class="step-header">
@@ -383,8 +402,6 @@ if analyze:
             <div class="step-title">Anonymized Output</div>
         </div>""", unsafe_allow_html=True)
 
-        # Highlight redacted tokens visually
-        import re
         highlighted = re.sub(
             r"<([^>]+)>",
             lambda m: f'<span class="redacted">&lt;{m.group(1)}&gt;</span>',
