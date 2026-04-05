@@ -1,0 +1,5 @@
+spacy
+# en_core_web_lg
+presidio-analyzer 
+presidio-anonymizer
+streamlit
