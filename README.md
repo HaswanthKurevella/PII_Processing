@@ -26,6 +26,8 @@ Built with spaCy and Microsoft Presidio. Runs entirely on-device — no external
 
 PII Anonymizer is a five-stage NLP pipeline that processes raw text through tokenization, part-of-speech tagging, named entity recognition, PII detection, and finally anonymization. It is available both as a command-line tool and as an interactive Streamlit web application.
 
+🚀 **Live Demo:** [piiprocessing.streamlit.app](https://piiprocessing-kjura8ojr56cdnry7bod3k.streamlit.app/)
+
 ---
 
 ## Features
